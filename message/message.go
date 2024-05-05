@@ -28,7 +28,7 @@ func ReadBinMessageToStruct(r io.Reader) (*message, error) {
 	}
 
 	messageID := messageID(messagebuf[sizeOfLength])
-	payload := messagebuf[sizeOfLength+1:]
+	payload := messagebuf[sizeOfLength+sizeOfId:]
 	return &message{ID: messageID, payload: payload}, nil
 }
 
@@ -36,10 +36,10 @@ func (m *message) BinMessage() []byte {
 	totalSizeOfMessage := sizeOfLength + sizeOfId + len(m.payload)
 	messageBuf := make([]byte, totalSizeOfMessage)
 	lengthBuf := messageBuf[:sizeOfLength]
-	binary.BigEndian.PutUint32(lengthBuf, uint32(totalSizeOfMessage))
+	binary.BigEndian.PutUint32(lengthBuf, uint32(sizeOfId + len(m.payload)))
 	copy(messageBuf[:sizeOfLength], lengthBuf)
 	messageBuf[sizeOfLength] = byte(m.ID)
-	copy(messageBuf[sizeOfLength+1:], m.payload)
+	copy(messageBuf[sizeOfLength+sizeOfId:], m.payload)
 	return messageBuf
 
 }
