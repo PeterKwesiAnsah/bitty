@@ -13,13 +13,13 @@ const (
 	lenOfUnusedBuf     = 8
 )
 
-type handShake struct {
-	peerID   [20]byte
-	infoHash [20]byte
-	protocol string //Bitorrent Protocol
+type HandShake struct {
+	PeerID   [20]byte
+	InfoHash [20]byte
+	Protocol string //Bitorrent Protocol
 }
 
-func ReadBinHandshakeToStruct(r io.Reader) (*handShake, error) {
+func ReadBinHandshakeToStruct(r io.Reader) (*HandShake, error) {
 	handShakeBuf, err := io.ReadAll(r)
 	if err != nil {
 		return nil, fmt.Errorf("reading handshake bin stream into buff:%w", err)
@@ -32,17 +32,17 @@ func ReadBinHandshakeToStruct(r io.Reader) (*handShake, error) {
 	startInfoHashBufIndex := lenToStoreProtocol + protocoLen + lenOfUnusedBuf
 	infoHash := handShakeBuf[startInfoHashBufIndex : startInfoHashBufIndex+lenOfInfoHash]
 	peerID := handShakeBuf[startInfoHashBufIndex+lenOfInfoHash:]
-	return &handShake{peerID: [20]byte(peerID), infoHash: [20]byte(infoHash), protocol: protocolStr}, nil
+	return &HandShake{PeerID: [20]byte(peerID), InfoHash: [20]byte(infoHash), Protocol: protocolStr}, nil
 
 }
 
-func (hs *handShake) BinhandShake() []byte {
-	hsBuf := make([]byte, len(hs.infoHash)+len(hs.peerID)+len(hs.protocol)+lenOfUnusedBuf+lenToStoreProtocol)
-	hsBuf[0] = byte(len(hs.protocol))
+func (hs *HandShake) BinhandShake() []byte {
+	hsBuf := make([]byte, len(hs.InfoHash)+len(hs.PeerID)+len(hs.Protocol)+lenOfUnusedBuf+lenToStoreProtocol)
+	hsBuf[0] = byte(len(hs.Protocol))
 	cur := lenToStoreProtocol
-	cur = cur + copy(hsBuf[cur:len(hs.protocol)+lenToStoreProtocol], []byte(hs.protocol))
+	cur = cur + copy(hsBuf[cur:len(hs.Protocol)+lenToStoreProtocol], []byte(hs.Protocol))
 	cur = cur + lenOfUnusedBuf
-	cur = cur + copy(hsBuf[cur:cur+lenOfInfoHash], hs.infoHash[:])
-	copy(hsBuf[cur:], hs.peerID[:])
+	cur = cur + copy(hsBuf[cur:cur+lenOfInfoHash], hs.InfoHash[:])
+	copy(hsBuf[cur:], hs.PeerID[:])
 	return hsBuf
 }
