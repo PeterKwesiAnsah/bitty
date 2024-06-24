@@ -8,6 +8,7 @@ import (
 
 	"github.com/peterkwesiansah/bitty/bitfield"
 	handShake "github.com/peterkwesiansah/bitty/handshake"
+	"github.com/peterkwesiansah/bitty/message"
 	"github.com/peterkwesiansah/bitty/peers"
 )
 
@@ -19,6 +20,26 @@ type Client struct {
 	peer     peers.Peer
 	infoHash [20]byte
 	peerID   [20]byte
+}
+
+func recvBitfield(conn net.Conn) (bitfield.Bitfield, error) {
+	conn.SetDeadline(time.Now().Add(5 * time.Second))
+	defer conn.SetDeadline(time.Time{}) // Disable the deadline
+
+	msg, err := message.ReadBinMessageToStruct(conn)
+	if err != nil {
+		return nil, err
+	}
+	if msg == nil {
+		err := fmt.Errorf("expected bitfield but got %+v", msg)
+		return nil, err
+	}
+	if msg.ID != message.MsgBitfield {
+		err := fmt.Errorf("expected bitfield but got id %d", msg.ID)
+		return nil, err
+	}
+
+	return msg.Payload, nil
 }
 
 func completeHandshake(conn net.Conn, infohash, peerID [20]byte) (*handShake.HandShake, error) {
@@ -45,7 +66,7 @@ func completeHandshake(conn net.Conn, infohash, peerID [20]byte) (*handShake.Han
 	}
 
 	if !bytes.Equal(sendHandShake.InfoHash[:], receivedHandShake.InfoHash[:]) {
-		return nil, fmt.Errorf("Hey man , you got the wrong file that i need")
+		return nil, fmt.Errorf("hey man , you got the wrong file that i need")
 	}
 
 	return receivedHandShake, nil
@@ -55,13 +76,26 @@ func completeHandshake(conn net.Conn, infohash, peerID [20]byte) (*handShake.Han
 func Connect(peer peers.Peer, peerID, infoHash [20]byte) (*Client, error) {
 	conn, err := net.DialTimeout("tcp", peer.String(), 3*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("Connecting to peer failed:%w", err)
+		return nil, fmt.Errorf("connecting to peer failed %w", err)
 	}
 	_, err = completeHandshake(conn, infoHash, peerID)
 	if err != nil {
-		return nil, fmt.Errorf("Handshaking with peer failed:%w", err)
+		conn.Close()
+		return nil, fmt.Errorf("handshaking with peer failed %w", err)
 	}
-	defer conn.Close()
-	return nil, err
+	bitfield, err := recvBitfield(conn)
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("receiving bitfield from peer failed %w", err)
+	}
+
+	return &Client{
+		Conn:     conn,
+		Choked:   true,
+		Bitfield: bitfield,
+		peer:     peer,
+		peerID:   peerID,
+		infoHash: infoHash,
+	}, nil
 
 }
