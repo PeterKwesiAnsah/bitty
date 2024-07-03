@@ -17,25 +17,22 @@ type Client struct {
 	Conn     net.Conn
 	Choked   bool
 	Bitfield bitfield.Bitfield
-	peer     peers.Peer
+	peer     *peers.Peer
 	infoHash [20]byte
 	peerID   [20]byte
 }
 
 func recvBitfield(conn net.Conn) (bitfield.Bitfield, error) {
-	conn.SetDeadline(time.Now().Add(5 * time.Second))
+	conn.SetDeadline(time.Now().Add(30 * time.Second))
 	defer conn.SetDeadline(time.Time{}) // Disable the deadline
 
 	msg, err := message.ReadBinMessageToStruct(conn)
 	if err != nil {
 		return nil, err
 	}
+
 	if msg == nil {
 		err := fmt.Errorf("expected bitfield but got %+v", msg)
-		return nil, err
-	}
-	if msg.ID != message.MsgBitfield {
-		err := fmt.Errorf("expected bitfield but got id %d", msg.ID)
 		return nil, err
 	}
 
@@ -49,7 +46,7 @@ func completeHandshake(conn net.Conn, infohash, peerID [20]byte) (*handShake.Han
 	sendHandShake := &handShake.HandShake{
 		PeerID:   peerID,
 		InfoHash: infohash,
-		Protocol: "BiTorrent protocol",
+		Protocol: "BitTorrent protocol",
 	}
 
 	sendHandShakeBin := sendHandShake.BinhandShake()
@@ -72,9 +69,10 @@ func completeHandshake(conn net.Conn, infohash, peerID [20]byte) (*handShake.Han
 	return receivedHandShake, nil
 }
 
-// connect function makes a TCP connection with a peer with a time out of 3 seconds
-func Connect(peer peers.Peer, peerID, infoHash [20]byte) (*Client, error) {
-	conn, err := net.DialTimeout("tcp", peer.String(), 3*time.Second)
+// connect function makes a TCP connection with a peer with a time out of 3 seconds, completes handshake and retrieves bf payload from peer
+func Connect(peer *peers.Peer, peerID, infoHash [20]byte) (*Client, error) {
+
+	conn, err := net.DialTimeout("tcp", peer.String(), 30*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("connecting to peer failed %w", err)
 	}
@@ -83,6 +81,8 @@ func Connect(peer peers.Peer, peerID, infoHash [20]byte) (*Client, error) {
 		conn.Close()
 		return nil, fmt.Errorf("handshaking with peer failed %w", err)
 	}
+
+	//after successful handshake expect bitfield
 	bitfield, err := recvBitfield(conn)
 	if err != nil {
 		conn.Close()
@@ -97,5 +97,18 @@ func Connect(peer peers.Peer, peerID, infoHash [20]byte) (*Client, error) {
 		peerID:   peerID,
 		infoHash: infoHash,
 	}, nil
+}
 
+// SendUnchoke sends an Unchoke message to the peer
+func (c *Client) SendUnchoke() error {
+	msg := message.Message{ID: message.MsgUnchoke}
+	_, err := c.Conn.Write(msg.BinMessage())
+	return err
+}
+
+// Interested sends an Interested message to the peer
+func (c *Client) Interested() error {
+	msg := message.Message{ID: message.MsgInterested}
+	_, err := c.Conn.Write(msg.BinMessage())
+	return err
 }
