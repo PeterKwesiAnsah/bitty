@@ -20,20 +20,35 @@ type HandShake struct {
 }
 
 func ReadBinHandshakeToStruct(r io.Reader) (*HandShake, error) {
-	handShakeBuf, err := io.ReadAll(r)
-	if err != nil {
-		return nil, fmt.Errorf("reading handshake bin stream into buff:%w", err)
-	}
-	protocoLen := int(handShakeBuf[0])
-	protocolStr := string(handShakeBuf[lenToStoreProtocol : protocoLen+lenToStoreProtocol])
-	if protocoLen != len(protocolStr) {
-		return nil, fmt.Errorf("invalid protocol")
-	}
-	startInfoHashBufIndex := lenToStoreProtocol + protocoLen + lenOfUnusedBuf
-	infoHash := handShakeBuf[startInfoHashBufIndex : startInfoHashBufIndex+lenOfInfoHash]
-	peerID := handShakeBuf[startInfoHashBufIndex+lenOfInfoHash:]
-	return &HandShake{PeerID: [20]byte(peerID), InfoHash: [20]byte(infoHash), Protocol: protocolStr}, nil
+	const (
+		protocolLen  = 19
+		handshakeLen = 68
+	)
 
+	handshakeBuf := make([]byte, handshakeLen)
+	_, err := io.ReadFull(r, handshakeBuf)
+	if err != nil {
+		return nil, fmt.Errorf("reading handshake: %w", err)
+	}
+
+	if int(handshakeBuf[0]) != protocolLen {
+		return nil, fmt.Errorf("invalid protocol length: got %d, want %d", handshakeBuf[0], protocolLen)
+	}
+
+	protocol := string(handshakeBuf[1:20])
+	if protocol != "BitTorrent protocol" {
+		return nil, fmt.Errorf("invalid protocol: %s", protocol)
+	}
+
+	var infoHash, peerID [20]byte
+	copy(infoHash[:], handshakeBuf[28:48])
+	copy(peerID[:], handshakeBuf[48:68])
+
+	return &HandShake{
+		Protocol: protocol,
+		InfoHash: infoHash,
+		PeerID:   peerID,
+	}, nil
 }
 
 func (hs *HandShake) BinhandShake() []byte {
