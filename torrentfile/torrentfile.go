@@ -5,7 +5,8 @@ import (
 	"crypto/sha1"
 	"encoding/binary"
 	"fmt"
-	"log"
+
+	//"log"
 	"time"
 
 	"github.com/peterkwesiansah/bitty/client"
@@ -130,22 +131,22 @@ func (ps *downloadPieceState) handlePeerResponse() error {
 	}
 }
 
-func (ps *downloadPieceState) verifyIntegrity(pieceHash [20]byte) error {
-	// Create a new SHA-1 hash
-	hash := sha1.New()
+// func (ps *downloadPieceState) verifyIntegrity(pieceHash [20]byte) error {
+// 	// Create a new SHA-1 hash
+// 	hash := sha1.New()
 
-	// Write the data to the hash
-	hash.Write(ps.pieceData)
+// 	// Write the data to the hash
+// 	hash.Write(ps.pieceData)
 
-	hashInBytes := hash.Sum(nil)
+// 	hashInBytes := hash.Sum(nil)
 
-	if bytes.Equal(hashInBytes, pieceHash[:]) {
-		return nil
-	}
+// 	if bytes.Equal(hashInBytes, pieceHash[:]) {
+// 		return nil
+// 	}
 
-	return fmt.Errorf("piece integrity check failed")
+// 	return fmt.Errorf("piece integrity check failed")
 
-}
+// }
 
 func downloadPiece(c *client.Client, fp *filePiece) (*downloadPieceState, error) {
 	state := downloadPieceState{
@@ -179,7 +180,7 @@ func downloadPiece(c *client.Client, fp *filePiece) (*downloadPieceState, error)
 			return nil, fmt.Errorf("failed to download piece %w", error)
 		}
 	}
-	log.Panicln("hurray")
+	//log.Panicln("hurray")
 	// log.Printf("piece index %d downloaded successfully", fp.PieceIndex)
 	// log.Printf("checking integrity of downloaded piece %d ...", fp.PieceIndex)
 	// //integerity of downloaded piece is checked here
@@ -197,10 +198,10 @@ func (t *Torrent) startDownloadingFilePieces(p peers.Peer, filePiecesQueue chan 
 	c, err := client.Connect(p, t.PeerID, t.InfoHash)
 	if err != nil {
 		//replace peer (have a channel of peers ??)
-		log.Printf("failed to connect to peer:%v", err)
+		//log.Printf("failed to connect to peer:%v", err)
 		return
 	}
-	log.Printf("connection successful for peer %v", p)
+	//log.Printf("connection successful for peer %v", p)
 	c.SendUnchoke()
 	c.Interested()
 
@@ -209,17 +210,28 @@ func (t *Torrent) startDownloadingFilePieces(p peers.Peer, filePiecesQueue chan 
 			filePiecesQueue <- fp
 			continue
 		}
-		log.Printf("Attempting to downloading piece %d", fp.PieceIndex)
+		//log.Printf("Attempting to downloading piece %d", fp.PieceIndex)
 
 		downloadedPiece, err := downloadPiece(c, fp)
 		if err != nil {
-			//log.Println(fp.Length)
-			log.Printf("failed to download a piece %v", err)
+			//log.Printf("failed to download a piece %v", err)
 			filePiecesQueue <- fp
 			continue
 		}
+
+		//check file piece integrity
+		hash := sha1.New()
+		hash.Write(downloadedPiece.pieceData)
+		bufHash := hash.Sum(nil)
+
+		if !bytes.Equal(bufHash, fp.PieceHash[:]) {
+			//log.Printf("integrity check failed for piece %d", fp.PieceIndex)
+			filePiecesQueue <- fp
+			continue
+		}
+
 		downloadedPiecesQueue <- *downloadedPiece
-		log.Printf("piece %d result sent to channel", fp.PieceIndex)
+		//log.Printf("piece %d result sent to channel", fp.PieceIndex)
 	}
 }
 
@@ -227,7 +239,7 @@ func (t *Torrent) Download() ([]byte, error) {
 	//creating a buffered chanel to hold len(pieceHashes) before blocking
 	piecesToBeDownloadedQueue := make(chan *filePiece, len(t.PieceHashes))
 	piecesDownloadedQueue := make(chan downloadPieceState)
-	bytesDownloaded := 0
+	piecesDownloadedCount := 0
 	torrentFileDownloaded := make([]byte, t.Length)
 	//feeding the buffered chanel up to len(pieceHashes)
 	for i, pieceHash := range t.PieceHashes {
@@ -243,17 +255,22 @@ func (t *Torrent) Download() ([]byte, error) {
 		//errors
 		go t.startDownloadingFilePieces(peer, piecesToBeDownloadedQueue, piecesDownloadedQueue)
 	}
-	for bytesDownloaded < t.Length {
+	for piecesDownloadedCount < len(t.PieceHashes) {
 		downloadedPiece := <-piecesDownloadedQueue
 		start := downloadedPiece.index * downloadedPiece.pieceSize
+		// log.Println(len(t.PieceHashes), t.Length)
 		// end := start + downloadedPiece.pieceSize
 		// if end > t.Length {
 		// 	end = t.Length
 		// }
-		bytesDownloaded = bytesDownloaded + downloadedPiece.bytesDownloaded
-		fmt.Printf("piece index %d downloaded successfully ", downloadedPiece.index)
-		copy(torrentFileDownloaded[start:], downloadedPiece.pieceData)
+		piecesDownloadedCount = piecesDownloadedCount + 1
+		//numWorkers := runtime.NumGoroutine() - 1 // subtract 1 for main thread
+		//log.Println(numWorkers, len(t.Peers))
 
+		//fmt.Printf("piece index %d downloaded successfully ", downloadedPiece.index)
+		copy(torrentFileDownloaded[start:], downloadedPiece.pieceData)
+		percentComplete := float64(piecesDownloadedCount) / float64(len(t.PieceHashes)) * 100
+		fmt.Printf("%.2f%% complete\n", percentComplete)
 	}
 	close(piecesDownloadedQueue)
 	close(piecesToBeDownloadedQueue)
