@@ -7,7 +7,7 @@ import (
 
 const (
 	lenToStoreProtocol = 1
-	lenOfProtocol      = 13
+	lenOfProtocol      = 19
 	lenOfPeerID        = 20
 	lenOfInfoHash      = 20
 	lenOfUnusedBuf     = 8
