@@ -15,29 +15,29 @@ const (
 
 const (
 	// MsgChoke chokes the receiver
-	MsgChoke messageID = 0
+	MsgChoke MessageID = 0
 	// MsgUnchoke unchokes the receiver
-	MsgUnchoke messageID = 1
+	MsgUnchoke MessageID = 1
 	// MsgInterested expresses interest in receiving data
-	MsgInterested messageID = 2
+	MsgInterested MessageID = 2
 	// MsgNotInterested expresses disinterest in receiving data
-	MsgNotInterested messageID = 3
+	MsgNotInterested MessageID = 3
 	// MsgHave alerts the receiver that the sender has downloaded a piece
-	MsgHave messageID = 4
+	MsgHave MessageID = 4
 	// MsgBitfield encodes which pieces that the sender has downloaded
-	MsgBitfield messageID = 5
+	MsgBitfield MessageID = 5
 	// MsgRequest requests a block of data from the receiver
-	MsgRequest messageID = 6
+	MsgRequest MessageID = 6
 	// MsgPiece delivers a block of data to fulfill a request
-	MsgPiece messageID = 7
+	MsgPiece MessageID = 7
 	// MsgCancel cancels a request
-	MsgCancel messageID = 8
+	MsgCancel MessageID = 8
 )
 
-type messageID uint8
+type MessageID uint8
 
 type Message struct {
-	ID      messageID
+	ID      MessageID
 	Payload []byte
 }
 
@@ -63,13 +63,16 @@ func ReadBinMessageToStruct(r io.Reader) (*Message, error) {
 		return nil, fmt.Errorf("parsing message stream %w", err)
 	}
 
-	messageID := messageID(messageBuf[0])
+	messageID := MessageID(messageBuf[0])
 	payload := messageBuf[1:]
 
 	return &Message{ID: messageID, Payload: payload}, nil
 }
 
 func (m *Message) BinMessage() []byte {
+	if m == nil {
+		return make([]byte, 4)
+	}
 	totalSizeOfMessage := sizeOfLength + sizeOfId + len(m.Payload)
 	messageBuf := make([]byte, totalSizeOfMessage)
 	lengthBuf := make([]byte, sizeOfLength)
