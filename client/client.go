@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"net"
 	"time"
@@ -17,7 +18,7 @@ type Client struct {
 	Conn     net.Conn
 	Choked   bool
 	Bitfield bitfield.Bitfield
-	peer     *peers.Peer
+	peer     peers.Peer
 	infoHash [20]byte
 	peerID   [20]byte
 }
@@ -33,6 +34,10 @@ func recvBitfield(conn net.Conn) (bitfield.Bitfield, error) {
 
 	if msg == nil {
 		err := fmt.Errorf("expected bitfield but got %+v", msg)
+		return nil, err
+	}
+	if msg.ID != message.MsgBitfield {
+		err := fmt.Errorf("expected bitfield but got ID %d", msg.ID)
 		return nil, err
 	}
 
@@ -70,9 +75,9 @@ func completeHandshake(conn net.Conn, infohash, peerID [20]byte) (*handShake.Han
 }
 
 // connect function makes a TCP connection with a peer with a time out of 3 seconds, completes handshake and retrieves bf payload from peer
-func Connect(peer *peers.Peer, peerID, infoHash [20]byte) (*Client, error) {
+func Connect(peer peers.Peer, peerID, infoHash [20]byte) (*Client, error) {
 
-	conn, err := net.DialTimeout("tcp", peer.String(), 30*time.Second)
+	conn, err := net.DialTimeout("tcp", peer.String(), 3*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("connecting to peer failed %w", err)
 	}
@@ -109,6 +114,19 @@ func (c *Client) SendUnchoke() error {
 // Interested sends an Interested message to the peer
 func (c *Client) Interested() error {
 	msg := message.Message{ID: message.MsgInterested}
+	_, err := c.Conn.Write(msg.BinMessage())
+	return err
+}
+
+// SendHave sends a Have message to the peer
+func (c *Client) SendHave(index int) error {
+	indexLength := 4
+	indexBuf := make([]byte, indexLength)
+	binary.BigEndian.PutUint32(indexBuf, uint32(index))
+	msg := message.Message{
+		ID:      message.MsgHave,
+		Payload: indexBuf,
+	}
 	_, err := c.Conn.Write(msg.BinMessage())
 	return err
 }
