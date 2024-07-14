@@ -30,7 +30,7 @@ type Torrent struct {
 
 type downloadPieceState struct {
 	index           int
-	client          client.Client
+	client          *client.Client
 	pieceSize       int
 	requestsCount   int
 	requestedBytes  int
@@ -46,7 +46,7 @@ const (
 	headerLength = indexLength + beginLength
 )
 
-var messageIDtoFunc = map[message.MessageID]func(ps *downloadPieceState) error{
+var messageIDtoFunc = map[message.MessageID]func(ps *downloadPieceState, msg message.Message) error{
 	message.MsgUnchoke: handleMsgUnchoke,
 	message.MsgChoke:   handleMsgChoke,
 	message.MsgPiece:   handleMsgPiece,
@@ -69,50 +69,39 @@ func sendDataRequest(c *client.Client, filePieceIndex, requestedBytes, bufSizeTo
 	return err
 }
 
-func handleMsgUnchoke(ps *downloadPieceState) error {
+func handleMsgUnchoke(ps *downloadPieceState, msg message.Message) error {
 	ps.client.Choked = false
 	return nil
 }
-func handleMsgChoke(ps *downloadPieceState) error {
+func handleMsgChoke(ps *downloadPieceState, msg message.Message) error {
 	ps.client.Choked = true
 	return nil
 }
-func handleMsgPiece(ps *downloadPieceState) error {
+func handleMsgPiece(ps *downloadPieceState, msg message.Message) error {
 	//log.Println("handling message piece")
-	receivedMessage, _ := message.ReadBinMessageToStruct(ps.client.Conn)
+	//receivedMessage, _ := message.ReadBinMessageToStruct(ps.client.Conn)
 
-	if receivedMessage == nil {
-		return nil
-	}
-
-	if len(receivedMessage.Payload) < headerLength {
+	if len(msg.Payload) < headerLength {
 		return fmt.Errorf("piece message too small")
 	}
-	filePieceIndex := int(binary.BigEndian.Uint32(receivedMessage.Payload[0:indexLength]))
+	filePieceIndex := int(binary.BigEndian.Uint32(msg.Payload[0:indexLength]))
 	if filePieceIndex != ps.index {
 		return fmt.Errorf("expected pieceIndex %d but got this pieceIndex %d", ps.index, filePieceIndex)
 	}
-	begin := int(binary.BigEndian.Uint32(receivedMessage.Payload[indexLength:headerLength]))
-	pieceBuf := receivedMessage.Payload[headerLength:]
+	begin := int(binary.BigEndian.Uint32(msg.Payload[indexLength:headerLength]))
+	pieceBuf := msg.Payload[headerLength:]
 	if begin+len(pieceBuf) > ps.pieceSize {
 		return fmt.Errorf("offset %d is too large", begin)
 	}
 	copy(ps.pieceData[begin:], pieceBuf)
 	ps.bytesDownloaded = ps.bytesDownloaded + len(pieceBuf)
 	ps.requestsCount = ps.requestsCount - 1
-	log.Println(len(pieceBuf))
 	return nil
 }
 
-func handleMsgHave(ps *downloadPieceState) error {
-	msg, err := message.ReadBinMessageToStruct(ps.client.Conn)
+func handleMsgHave(ps *downloadPieceState, msg message.Message) error {
+	//msg, err := message.ReadBinMessageToStruct(ps.client.Conn)
 	pieceIndexLength := 4
-	if err != nil {
-		return err
-	}
-	if msg == nil {
-		return nil
-	}
 	if len(msg.Payload) < 4 {
 		return fmt.Errorf("message payload size too small")
 	}
@@ -135,7 +124,7 @@ func (ps *downloadPieceState) handlePeerResponse() error {
 	}
 
 	if handleMessage, ok := messageIDtoFunc[message.MessageID(receivedMessage.ID)]; ok {
-		return handleMessage(ps)
+		return handleMessage(ps, *receivedMessage)
 	} else {
 		return fmt.Errorf("unexpected messageId %d", int(receivedMessage.ID))
 	}
@@ -159,9 +148,9 @@ func (ps *downloadPieceState) verifyIntegrity(pieceHash [20]byte) error {
 }
 
 func downloadPiece(c *client.Client, fp *filePiece) (*downloadPieceState, error) {
-	state := &downloadPieceState{
+	state := downloadPieceState{
 		index:     fp.PieceIndex,
-		client:    *c,
+		client:    c,
 		pieceSize: fp.Length,
 		pieceData: make([]byte, fp.Length),
 	}
@@ -169,6 +158,7 @@ func downloadPiece(c *client.Client, fp *filePiece) (*downloadPieceState, error)
 	// prevent us from being stuck on unresponsive peer
 	c.Conn.SetDeadline(time.Now().Add(30 * time.Second))
 	defer c.Conn.SetDeadline(time.Time{}) // Disable the deadline
+
 	for state.bytesDownloaded < state.pieceSize {
 		//log.Println(state.bytesDownloaded, state.pieceSize, fp.PieceIndex)
 		if !state.client.Choked {
@@ -190,27 +180,27 @@ func downloadPiece(c *client.Client, fp *filePiece) (*downloadPieceState, error)
 		}
 	}
 	log.Panicln("hurray")
-	log.Printf("piece index %d downloaded successfully", fp.PieceIndex)
-	log.Printf("checking integrity of downloaded piece %d ...", fp.PieceIndex)
-	//integerity of downloaded piece is checked here
-	error := state.verifyIntegrity(fp.PieceHash)
-	if error != nil {
-		return nil, fmt.Errorf("piece %d integrity verification failed %w", fp.PieceIndex, error)
-	}
-	log.Printf("piece %d integrity verified successfully", fp.PieceIndex)
-	c.SendHave(fp.PieceIndex)
-	return state, nil
-
+	// log.Printf("piece index %d downloaded successfully", fp.PieceIndex)
+	// log.Printf("checking integrity of downloaded piece %d ...", fp.PieceIndex)
+	// //integerity of downloaded piece is checked here
+	// error := state.verifyIntegrity(fp.PieceHash)
+	// if error != nil {
+	// 	return nil, fmt.Errorf("piece %d integrity verification failed %w", fp.PieceIndex, error)
+	// }
+	// log.Printf("piece %d integrity verified successfully", fp.PieceIndex)
+	// c.SendHave(fp.PieceIndex)
+	return &state, nil
 }
 
-func (t *Torrent) startDownloadingFilePieces(p *peers.Peer, filePiecesQueue chan *filePiece, downloadedPiecesQueue chan downloadPieceState) error {
+func (t *Torrent) startDownloadingFilePieces(p peers.Peer, filePiecesQueue chan *filePiece, downloadedPiecesQueue chan downloadPieceState) {
 
 	c, err := client.Connect(p, t.PeerID, t.InfoHash)
 	if err != nil {
 		//replace peer (have a channel of peers ??)
-		return fmt.Errorf("failed to connect to peer %w", err)
+		log.Printf("failed to connect to peer:%v", err)
+		return
 	}
-	//log.Printf("connection successful for peer %v", p)
+	log.Printf("connection successful for peer %v", p)
 	c.SendUnchoke()
 	c.Interested()
 
@@ -219,17 +209,18 @@ func (t *Torrent) startDownloadingFilePieces(p *peers.Peer, filePiecesQueue chan
 			filePiecesQueue <- fp
 			continue
 		}
+		log.Printf("Attempting to downloading piece %d", fp.PieceIndex)
 
 		downloadedPiece, err := downloadPiece(c, fp)
 		if err != nil {
+			//log.Println(fp.Length)
+			log.Printf("failed to download a piece %v", err)
 			filePiecesQueue <- fp
 			continue
 		}
 		downloadedPiecesQueue <- *downloadedPiece
 		log.Printf("piece %d result sent to channel", fp.PieceIndex)
 	}
-	return nil
-
 }
 
 func (t *Torrent) Download() ([]byte, error) {
@@ -250,7 +241,7 @@ func (t *Torrent) Download() ([]byte, error) {
 	for _, peer := range t.Peers {
 		//log.Printf("spewing off worker %d", index)
 		//errors
-		go t.startDownloadingFilePieces(&peer, piecesToBeDownloadedQueue, piecesDownloadedQueue)
+		go t.startDownloadingFilePieces(peer, piecesToBeDownloadedQueue, piecesDownloadedQueue)
 	}
 	for bytesDownloaded < t.Length {
 		downloadedPiece := <-piecesDownloadedQueue
