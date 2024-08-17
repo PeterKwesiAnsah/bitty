@@ -9,27 +9,27 @@ import (
 	"github.com/jackpal/bencode-go"
 )
 
-type bencodeInfo struct {
+type BencodeInfo struct {
 	Pieces      string `bencode:"pieces"`
 	PieceLength int    `bencode:"piece length"`
 	Length      int    `bencode:"length"`
 	Name        string `bencode:"name"`
 }
 
-type bencodeTorrent struct {
+type BencodeTorrent struct {
 	Announce     string `bencode:"announce"`
 	CreatedBy    string `bencode:"created by"`
 	CreationDate int64  `bencode:"creation date"`
 	Encoding     string `bencode:"encoding"`
 	Port         uint16 `bencode:"port"`
 
-	Info        bencodeInfo `bencode:"info"`
+	Info        BencodeInfo `bencode:"info"`
 	InfoHash    [20]byte
 	PieceHashes [][20]byte
 }
 
 // Serializes the bencodeInfo into a SHA-1 hash
-func (bct *bencodeInfo) infoHash() ([20]byte, error) {
+func (bct *BencodeInfo) infoHash() ([20]byte, error) {
 	var buf bytes.Buffer
 	err := bencode.Marshal(&buf, *bct)
 	if err != nil {
@@ -42,7 +42,7 @@ func (bct *bencodeInfo) infoHash() ([20]byte, error) {
 *
 returns a slice of an array of bytes , with each array representing the SHA-1 hash of a piece
 */
-func (bci *bencodeInfo) pieceHashes() ([][20]byte, error) {
+func (bci *BencodeInfo) pieceHashes() ([][20]byte, error) {
 	const hashLength = 20
 	piecesBuf := []byte(bci.Pieces)
 	piecesBufLength := len(piecesBuf)
@@ -60,8 +60,8 @@ func (bci *bencodeInfo) pieceHashes() ([][20]byte, error) {
 }
 
 // Takes a path to torrent ,read it into a bencode stream and serializes it to a bencodeTorrent Struct
-func Decode(pathToTorrent string) (*bencodeTorrent, error) {
-	bct := &bencodeTorrent{}
+func Decode(pathToTorrent string) (*BencodeTorrent, error) {
+	bct := &BencodeTorrent{}
 	file, err := os.Open(pathToTorrent)
 	if err != nil {
 		return nil, fmt.Errorf("reading torrent file %w", err)
