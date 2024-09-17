@@ -41,13 +41,14 @@ type Message struct {
 	Payload []byte
 }
 
-func ReadBinMessageToStruct(r io.Reader) (*Message, error) {
+func ReadMessage(r io.Reader) (*Message, error) {
 
 	const messageIdlen = 4
 	messageIDbuf := make([]byte, int(messageIdlen))
 	_, err := io.ReadFull(r, messageIDbuf)
 
 	if err != nil {
+		//log.Println(err, num)
 		return nil, fmt.Errorf("parsing message stream %w", err)
 	}
 	messageSize := binary.BigEndian.Uint32(messageIDbuf)
@@ -69,19 +70,19 @@ func ReadBinMessageToStruct(r io.Reader) (*Message, error) {
 	return &Message{ID: messageID, Payload: payload}, nil
 }
 
-func (m *Message) BinMessage() []byte {
-	if m == nil {
+func (msg *Message) Serialize() []byte {
+	if msg == nil {
 		return make([]byte, 4)
 	}
-	totalSizeOfMessage := sizeOfLength + sizeOfId + len(m.Payload)
-	messageBuf := make([]byte, totalSizeOfMessage)
+	msgLength := sizeOfLength + sizeOfId + len(msg.Payload)
+	msgBuf := make([]byte, msgLength)
 	lengthBuf := make([]byte, sizeOfLength)
 
-	binary.BigEndian.PutUint32(lengthBuf, uint32(sizeOfId+len(m.Payload)))
-	copy(messageBuf[:sizeOfLength], lengthBuf)
+	binary.BigEndian.PutUint32(lengthBuf, uint32(sizeOfId+len(msg.Payload)))
+	copy(msgBuf[:sizeOfLength], lengthBuf)
 
-	messageBuf[sizeOfLength] = byte(m.ID)
-	copy(messageBuf[sizeOfLength+sizeOfId:], m.Payload)
-	return messageBuf
+	msgBuf[sizeOfLength] = byte(msg.ID)
+	copy(msgBuf[sizeOfLength+sizeOfId:], msg.Payload)
+	return msgBuf
 
 }
