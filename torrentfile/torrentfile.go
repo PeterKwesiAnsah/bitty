@@ -180,14 +180,14 @@ func (t *Torrent) Download() ([]byte, error) {
 		close(resultsQueue)
 		close(workQueue)
 		close(activePeers)
-		close(errors)
-
 	}()
 
 	go func() {
 		for error := range errors {
 			//handle error from connection related issues with peers
-			log.Println(error.Error())
+			if error != nil {
+				log.Println(error.Error())
+			}
 		}
 
 	}()
