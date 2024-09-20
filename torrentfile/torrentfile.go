@@ -168,7 +168,10 @@ func (t *Torrent) Download() ([]byte, error) {
 
 			//returns when there's nothing more to download in other words workQueue is empty or error
 			err := t.initDownloadWorker(peer, resultsQueue, workQueue)
-			errors <- err
+			if err != nil {
+				errors <- err
+
+			}
 
 		}(activePeer)
 	}
@@ -185,9 +188,8 @@ func (t *Torrent) Download() ([]byte, error) {
 	go func() {
 		for error := range errors {
 			//handle error from connection related issues with peers
-			if error != nil {
-				log.Println(error.Error())
-			}
+			log.Println(error.Error())
+
 		}
 
 	}()
