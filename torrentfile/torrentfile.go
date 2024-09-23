@@ -170,7 +170,6 @@ func (t *Torrent) Download() ([]byte, error) {
 			err := t.initDownloadWorker(peer, resultsQueue, workQueue)
 			if err != nil {
 				errors <- err
-
 			}
 
 		}(activePeer)
