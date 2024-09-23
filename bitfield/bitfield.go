@@ -1,11 +1,17 @@
 package bitfield
 
+import (
+	"fmt"
+	"io"
+
+	"github.com/peterkwesiansah/bitty/message"
+)
+
 // A Bitfield represents the pieces that a peer has
 type Bitfield []byte
 
 // HasPiece tells if a bitfield has a particular index set
 func (bf Bitfield) HasPiece(index int) bool {
-	//log.Println(bf)
 	byteIndex := index / 8
 	offset := index % 8
 	if byteIndex < 0 || byteIndex >= len(bf) {
@@ -14,14 +20,21 @@ func (bf Bitfield) HasPiece(index int) bool {
 	return bf[byteIndex]>>uint(7-offset)&1 != 0
 }
 
-// SetPiece sets a bit in the bitfield
-func (bf Bitfield) SetPiece(index int) {
-	byteIndex := index / 8
-	offset := index % 8
+func Read(conn io.Reader) (Bitfield, error) {
 
-	// silently discard invalid bounded index
-	if byteIndex < 0 || byteIndex >= len(bf) {
-		return
+	msg, err := message.ReadMessage(conn)
+	if err != nil {
+		return nil, err
 	}
-	bf[byteIndex] |= 1 << uint(7-offset)
+
+	if msg == nil {
+		err := fmt.Errorf("expected bitfield but got %+v", msg)
+		return nil, err
+	}
+	if msg.ID != message.MsgBitfield {
+		err := fmt.Errorf("expected bitfield but got ID %d", msg.ID)
+		return nil, err
+	}
+
+	return msg.Payload, nil
 }

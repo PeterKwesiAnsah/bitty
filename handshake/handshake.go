@@ -19,23 +19,23 @@ type HandShake struct {
 	Protocol string //Bitorrent Protocol
 }
 
-func ReadBinHandshakeToStruct(r io.Reader) (*HandShake, error) {
+func Read(r io.Reader) (*HandShake, error) {
 	const (
-		protocolLen  = 19
-		handshakeLen = 68
+		protocolLength  = 19
+		handshakeLength = 68
 	)
 
-	handshakeBuf := make([]byte, handshakeLen)
+	handshakeBuf := make([]byte, handshakeLength)
 	_, err := io.ReadFull(r, handshakeBuf)
 	if err != nil {
 		return nil, fmt.Errorf("reading handshake: %w", err)
 	}
 
-	if int(handshakeBuf[0]) != protocolLen {
-		return nil, fmt.Errorf("invalid protocol length: got %d, want %d", handshakeBuf[0], protocolLen)
+	if int(handshakeBuf[0]) != protocolLength {
+		return nil, fmt.Errorf("invalid protocol length: got %d, want %d", handshakeBuf[0], protocolLength)
 	}
 
-	protocol := string(handshakeBuf[1:20])
+	protocol := string(handshakeBuf[1 : protocolLength+1])
 	if protocol != "BitTorrent protocol" {
 		return nil, fmt.Errorf("invalid protocol: %s", protocol)
 	}
@@ -51,7 +51,7 @@ func ReadBinHandshakeToStruct(r io.Reader) (*HandShake, error) {
 	}, nil
 }
 
-func (hs *HandShake) BinhandShake() []byte {
+func (hs *HandShake) Serialize() []byte {
 	hsBuf := make([]byte, len(hs.InfoHash)+len(hs.PeerID)+len(hs.Protocol)+lenOfUnusedBuf+lenToStoreProtocol)
 	hsBuf[0] = byte(len(hs.Protocol))
 	cur := lenToStoreProtocol

@@ -4,69 +4,36 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"fmt"
-	"net/url"
-	"strconv"
+	"os"
 
 	"github.com/jackpal/bencode-go"
-	"github.com/peterkwesiansah/bitty/utils"
 )
 
-type bencodeInfo struct {
+type BencodeInfo struct {
 	Pieces      string `bencode:"pieces"`
 	PieceLength int    `bencode:"piece length"`
 	Length      int    `bencode:"length"`
 	Name        string `bencode:"name"`
 }
 
-type bencodeTorrent struct {
+type BencodeTorrent struct {
 	Announce     string `bencode:"announce"`
 	CreatedBy    string `bencode:"created by"`
 	CreationDate int64  `bencode:"creation date"`
 	Encoding     string `bencode:"encoding"`
 	Port         uint16 `bencode:"port"`
 
-	Info bencodeInfo `bencode:"info"`
-}
-
-func (bct *bencodeTorrent) GetPeersTrackerURL(peer_id string, port string) (string, error) {
-	infoHash, err := bct.Info.GetInfoHash()
-	if err != nil {
-		return "", fmt.Errorf("encode bencodeTorrent struct info hash: %w", err)
-	}
-	// queryParams := url.Values{}
-	// queryParams.Set("info_hash", string(infoHash[:]))
-	// queryParams.Set("peer_id", peer_id)
-	// queryParams.Set("port", port)
-	// queryParams.Set("uploaded", "0")
-	// queryParams.Set("downloaded", "0")
-	// queryParams.Set("left", "100")
-	// queryParams.Set("compact", "1")
-	// // Construct the URL with query parameters
-	// fullURL := bct.Announce + "?" + queryParams.Encode()
-	// return fullURL, nil
-	base, err := url.Parse(bct.Announce)
-	if err != nil {
-		return "", err
-	}
-	params := url.Values{
-		"info_hash":  []string{string(infoHash[:])},
-		"peer_id":    []string{peer_id},
-		"port":       []string{port},
-		"uploaded":   []string{"0"},
-		"downloaded": []string{"0"},
-		"compact":    []string{"1"},
-		"left":       []string{strconv.Itoa(bct.Info.Length)},
-	}
-	base.RawQuery = params.Encode()
-	return base.String(), nil
+	Info        BencodeInfo `bencode:"info"`
+	InfoHash    [20]byte
+	PieceHashes [][20]byte
 }
 
 // Serializes the bencodeInfo into a SHA-1 hash
-func (bct *bencodeInfo) GetInfoHash() ([20]byte, error) {
+func (bct *BencodeInfo) infoHash() ([20]byte, error) {
 	var buf bytes.Buffer
-	errInSerializing := bencode.Marshal(&buf, *bct)
-	if errInSerializing != nil {
-		return [20]byte{}, errInSerializing
+	err := bencode.Marshal(&buf, *bct)
+	if err != nil {
+		return [20]byte{}, err
 	}
 	return sha1.Sum(buf.Bytes()), nil
 }
@@ -75,35 +42,49 @@ func (bct *bencodeInfo) GetInfoHash() ([20]byte, error) {
 *
 returns a slice of an array of bytes , with each array representing the SHA-1 hash of a piece
 */
-func (bci *bencodeInfo) GetPieceHashes() ([][20]byte, error) {
-	hashLen := 20
-	piecesInBytes := []byte(bci.Pieces)
-	numOfPieceHashes := len([]byte(bci.Pieces)) / hashLen
-	pieceHashes := make([][20]byte, numOfPieceHashes)
-	if len([]byte(bci.Pieces))%hashLen != 0 {
-		return nil, fmt.Errorf("received malformed pieces of length %d", len(piecesInBytes))
+func (bci *BencodeInfo) pieceHashes() ([][20]byte, error) {
+	const hashLength = 20
+	piecesBuf := []byte(bci.Pieces)
+	piecesBufLength := len(piecesBuf)
+	pieceHashCount := piecesBufLength / hashLength
+	pieceHashes := make([][hashLength]byte, pieceHashCount)
+
+	if piecesBufLength%hashLength != 0 {
+		return nil, fmt.Errorf("received malformed pieces of length %d", piecesBufLength)
 	}
-	endCopyIndex := 20
-	for i := 0; i < numOfPieceHashes; i++ {
-		startCopyIndex := hashLen * i
-		endCopyIndex = copy(pieceHashes[i][:], piecesInBytes[startCopyIndex:endCopyIndex]) + endCopyIndex
+
+	for i := 0; i < pieceHashCount; i++ {
+		copy(pieceHashes[i][:], piecesBuf[i*hashLength:(i+1)*hashLength])
 	}
 	return pieceHashes, nil
 }
 
-// Takes a path to torrent ,read it into a bencode stream and serializes it  to a bencodeTorrent Struct
-func Decode(pathToTorrent string) (bencodeTorrent, error) {
-	bct := bencodeTorrent{}
-	torrentFileDescriptor, err := utils.ReadTorrentFile(pathToTorrent)
+// Takes a path to torrent ,read it into a bencode stream and serializes it to a bencodeTorrent Struct
+func Decode(pathToTorrent string) (*BencodeTorrent, error) {
+	bct := &BencodeTorrent{}
+	file, err := os.Open(pathToTorrent)
 	if err != nil {
-		return bct, fmt.Errorf("reading torrent file:%w", err)
+		return nil, fmt.Errorf("reading torrent file %w", err)
 	}
 
-	defer torrentFileDescriptor.Close()
+	defer file.Close()
 
-	errInDecode := bencode.Unmarshal(torrentFileDescriptor, &bct)
-	if errInDecode != nil {
-		return bencodeTorrent{}, fmt.Errorf("decoding bencode stream failed: %w", errInDecode)
+	err = bencode.Unmarshal(file, bct)
+	if err != nil {
+		return nil, fmt.Errorf("decoding bencode stream failed: %w", err)
 	}
+
+	infoHash, err := bct.Info.infoHash()
+	if err != nil {
+		return nil, err
+	}
+	bct.InfoHash = infoHash
+
+	pieceHashes, err := bct.Info.pieceHashes()
+	if err != nil {
+		return nil, err
+	}
+	bct.PieceHashes = pieceHashes
+
 	return bct, nil
 }
